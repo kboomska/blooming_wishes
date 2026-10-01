@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Flower Text Selection</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      padding: 100px 22%;
+      font-family: Georgia, serif;
+      background: #faf8f5;
+      color: #1a1a1a;
+      line-height: 1.85;
+      font-size: 21px;
+    }
+
+    .content {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Холст поверх текста */
+    #canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    ::selection {
+      background: rgba(134, 239, 172, 0.7);
+      color: #111111;
+    }
+
+    h1 {
+      font-size: 44px;
+      line-height: 1.2;
+      margin-bottom: 30px;
+    }
+
+    p {
+      margin-bottom: 24px;
+    }
+
+    .italic {
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="content">
+    <h1>🌺 Выдели любое пожелание и пусть оно расцветёт!</h1>
+    <p>
+      Мне бы очень хотелось, чтобы сегодня ты думала не о том, сколько лет исполнилось, а о том, сколько ещё всего тебе предстоит попробовать, увидеть и почувствовать. Пусть никакое «уже поздно» не мешает твоему «а я хочу». В тебе ещё столько характера, любознательности, стремлений, драйва, чувственности и тайн! Мне очень хочется, чтобы ты сама замечала это в себе так же часто, как замечаю я.
+    </p>
+    <p>
+      Желаю тебе уверенности - не той, с которой никогда не страшно, а той, с которой всё-таки решаешься. Чтобы среди чужих советов, повседневных забот и бесконечных «надо» ты всегда могла услышать себя: что тебе дорого, чего хочется именно тебе, куда зовёт твоё сердечко. И чтобы хватало смелости идти туда в своём темпе, не оглядываясь на мнение со стороны.
+    </p>
+    <p>
+      Пусть твои старания приносят ощутимые плоды, а работа - не только усталость и бессонные ночи, но и удовлетворение, достойную зарплату и гордость за результат. Конечно, не всё может получаться - это нормально. Но я желаю тебе как можно меньше обидных «осечек» и побольше счастливых совпадений. А если что-то не сложится - пусть это будет всего лишь неудачная попытка, а не повод сомневаться в себе.
+    </p>
+    <p>
+      Пусть здоровье бережёт твои планы, а сил хватает не только на дела, но и на саму жизнь: на поездки, любимые занятия, спонтанные затеи и вечера, когда никуда не нужно спешить. И помни: тебе не обязательно со всем справляться одной. Рядом есть люди, которым ты дорога, которые готовы выслушать, помочь и поддержать.
+    </p>
+    <p>
+      Оставайся такой же красивой, нежной, задорной и ни на кого не похожей. Пусть в твоей жизни будет больше того, от чего ты по-настоящему улыбаешься!
+    </p>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const itemCanvas = document.createElement('canvas');
+    const itemCtx = itemCanvas.getContext('2d');
+
+    let width = canvas.width = itemCanvas.width = window.innerWidth;
+    let height = canvas.height = itemCanvas.height = window.innerHeight;
+
+    window.addEventListener('resize', () => {
+      width = canvas.width = itemCanvas.width = window.innerWidth;
+      height = canvas.height = itemCanvas.height = window.innerHeight;
+    });
+
+    const flowers = new Map();
+    const colors = ['#f43f5e', '#ec4899', '#d946ef', '#a855f7', '#fb923c', '#fbbf24'];
+    const STEP_X = 20;
+
+    function pseudoRandom(seed) {
+      const x = Math.sin(seed) * 10000;
+      return x - Math.floor(x);
+    }
+
+    document.addEventListener('selectionchange', () => {
+      const sel = window.getSelection();
+      const activeKeys = new Set();
+
+      if (!sel.isCollapsed && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        const rects = range.getClientRects();
+
+        for (let i = 0; i < rects.length; i++) {
+          const r = rects[i];
+          if (r.width < 4) continue;
+
+          // Привязка к глобальной абсолютной сетке страницы
+          const startX = Math.ceil(r.left / STEP_X) * STEP_X;
+          const endX = Math.floor(r.right / STEP_X) * STEP_X;
+          const baseRowY = Math.round(r.top);
+
+          for (let x = startX; x <= endX; x += STEP_X) {
+            // Ключ привязан к абсолютной позиции x и базовой линии строки
+            const key = `${x}_${baseRowY}`;
+            activeKeys.add(key);
+
+            if (!flowers.has(key)) {
+              const seed = x * 31 + baseRowY * 17;
+              const flowerRadius = 11;
+              const minStem = 16 + (flowerRadius * 0.7);
+              const extraStem = pseudoRandom(seed + 1) * 36;
+
+              flowers.set(key, {
+                x,
+                y: r.top + 3,
+                baseRowY,
+                seed,
+                growth: 0,
+                targetGrowth: 1,
+                stemLength: minStem + extraStem,
+                angle: (pseudoRandom(seed + 2) - 0.5) * 0.55,
+                petalCount: 5 + Math.floor(pseudoRandom(seed + 3) * 4),
+                color: colors[Math.floor(pseudoRandom(seed + 4) * colors.length)],
+                sourceRect: { left: r.left, top: r.top, width: r.width, height: r.height }
+              });
+            } else {
+              const f = flowers.get(key);
+              f.targetGrowth = 1;
+              f.y = r.top + 3;
+              f.sourceRect = { left: r.left, top: r.top, width: r.width, height: r.height };
+            }
+          }
+        }
+      }
+
+      for (const [key, f] of flowers.entries()) {
+        if (!activeKeys.has(key)) {
+          f.targetGrowth = 0;
+        }
+      }
+    });
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+
+      const sortedFlowers = Array.from(flowers.values()).sort((a, b) => a.y - b.y);
+
+      for (const f of sortedFlowers) {
+        f.growth += (f.targetGrowth - f.growth) * 0.12;
+
+        if (f.growth < 0.01 && f.targetGrowth === 0) {
+          for (const [k, v] of flowers.entries()) {
+            if (v === f) flowers.delete(k);
+          }
+          continue;
+        }
+
+        const g = f.growth;
+        const currentStem = f.stemLength * g;
+        const topX = f.x + Math.sin(f.angle) * currentStem;
+        const topY = f.y - Math.cos(f.angle) * currentStem;
+
+        itemCtx.clearRect(0, 0, width, height);
+
+        // 1. Стебель
+        itemCtx.strokeStyle = '#15803d';
+        itemCtx.lineWidth = 2.2;
+        itemCtx.lineCap = 'round';
+        itemCtx.beginPath();
+        itemCtx.moveTo(f.x, f.y);
+        itemCtx.quadraticCurveTo(
+          f.x + Math.sin(f.angle * 0.5) * currentStem * 0.5,
+          f.y - (currentStem * 0.5),
+          topX,
+          topY
+        );
+        itemCtx.stroke();
+
+        // 2. Бутон
+        if (g > 0.28) {
+          const petalScale = (g - 0.28) / 0.72;
+          const r = 7.5 * petalScale;
+
+          // Лепестки
+          for (let i = 0; i < f.petalCount; i++) {
+            const th = (i * 2 * Math.PI) / f.petalCount;
+            const px = topX + Math.cos(th) * r;
+            const py = topY + Math.sin(th) * r;
+
+            itemCtx.fillStyle = f.color;
+            itemCtx.beginPath();
+            itemCtx.arc(px, py, 4.5 * petalScale, 0, Math.PI * 2);
+            itemCtx.fill();
+          }
+
+          // Сердцевина
+          itemCtx.fillStyle = '#fef08a';
+          itemCtx.beginPath();
+          itemCtx.arc(topX, topY, 3.2 * petalScale, 0, Math.PI * 2);
+          itemCtx.fill();
+        }
+
+        // 3. Вырезаем только родительский прямоугольник строки
+        if (f.sourceRect) {
+          itemCtx.save();
+          itemCtx.globalCompositeOperation = 'destination-out';
+          itemCtx.fillStyle = 'black';
+          itemCtx.fillRect(
+            f.sourceRect.left,
+            f.sourceRect.top,
+            f.sourceRect.width,
+            f.sourceRect.height
+          );
+          itemCtx.restore();
+        }
+
+        ctx.drawImage(itemCanvas, 0, 0);
+      }
+
+      requestAnimationFrame(draw);
+    }
+
+    draw();
+  </script>
+</body>
+</html>

@@ -2,19 +2,29 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Flower Text Selection</title>
   <style>
     * {
       box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
     }
     body {
       margin: 0;
-      padding: 100px 22%;
-      font-family: Georgia, serif;
+      padding: 60px 10%;
+      font-family: Georgia, -apple-system, serif;
       background: #faf8f5;
       color: #1a1a1a;
       line-height: 1.85;
-      font-size: 21px;
+      font-size: 19px;
+      overflow-x: hidden;
+    }
+
+    @media (min-width: 768px) {
+      body {
+        padding: 100px 22%;
+        font-size: 21px;
+      }
     }
 
     .content {
@@ -22,7 +32,6 @@
       z-index: 1;
     }
 
-    /* Холст поверх текста */
     #canvas {
       position: fixed;
       top: 0;
@@ -38,10 +47,23 @@
       color: #111111;
     }
 
+    /* Поддержка стилей выделения для Safari iOS */
+    ::-webkit-selection {
+      background: rgba(134, 239, 172, 0.7);
+      color: #111111;
+    }
+
     h1 {
-      font-size: 44px;
+      font-size: 34px;
       line-height: 1.2;
-      margin-bottom: 30px;
+      margin-bottom: 24px;
+    }
+
+    @media (min-width: 768px) {
+      h1 {
+        font-size: 44px;
+        margin-bottom: 30px;
+      }
     }
 
     p {
@@ -79,27 +101,32 @@
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
 
-    const itemCanvas = document.createElement('canvas');
-    const itemCtx = itemCanvas.getContext('2d');
+    let dpr = window.devicePixelRatio || 1;
+    let width = 0;
+    let height = 0;
 
-    let width = canvas.width = itemCanvas.width = window.innerWidth;
-    let height = canvas.height = itemCanvas.height = window.innerHeight;
-
-    window.addEventListener('resize', () => {
-      width = canvas.width = itemCanvas.width = window.innerWidth;
-      height = canvas.height = itemCanvas.height = window.innerHeight;
-    });
+    function resize() {
+      dpr = window.devicePixelRatio || 1;
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    window.addEventListener('resize', resize);
+    window.addEventListener('orientationchange', resize);
+    resize();
 
     const flowers = new Map();
     const colors = ['#f43f5e', '#ec4899', '#d946ef', '#a855f7', '#fb923c', '#fbbf24'];
-    const STEP_X = 20;
+    const STEP_X = 18;
 
     function pseudoRandom(seed) {
       const x = Math.sin(seed) * 10000;
       return x - Math.floor(x);
     }
 
-    document.addEventListener('selectionchange', () => {
+    function updateSelection() {
       const sel = window.getSelection();
       const activeKeys = new Set();
 
@@ -107,44 +134,50 @@
         const range = sel.getRangeAt(0);
         const rects = range.getClientRects();
 
+        const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
+        const scrollY = window.pageYOffset || document.documentElement.scrollTop;
+
         for (let i = 0; i < rects.length; i++) {
           const r = rects[i];
           if (r.width < 4) continue;
 
-          // Привязка к глобальной абсолютной сетке страницы
-          const startX = Math.ceil(r.left / STEP_X) * STEP_X;
-          const endX = Math.floor(r.right / STEP_X) * STEP_X;
-          const baseRowY = Math.round(r.top);
+          // Абсолютные координаты относительно документа (не зависят от скролла)
+          const docLeft = r.left + scrollX;
+          const docRight = r.right + scrollX;
+          const docTop = r.top + scrollY;
 
-          for (let x = startX; x <= endX; x += STEP_X) {
-            // Ключ привязан к абсолютной позиции x и базовой линии строки
-            const key = `${x}_${baseRowY}`;
+          const startX = Math.ceil(docLeft / STEP_X) * STEP_X;
+          const endX = Math.floor(docRight / STEP_X) * STEP_X;
+          const baseRowY = Math.round(docTop);
+
+          for (let docX = startX; docX <= endX; docX += STEP_X) {
+            const key = `${docX}_${baseRowY}`;
             activeKeys.add(key);
 
             if (!flowers.has(key)) {
-              const seed = x * 31 + baseRowY * 17;
-              const flowerRadius = 11;
-              const minStem = 16 + (flowerRadius * 0.7);
-              const extraStem = pseudoRandom(seed + 1) * 36;
+              const seed = docX * 31 + baseRowY * 17;
+              const flowerRadius = 10;
+              const minStem = 15 + (flowerRadius * 0.7);
+              const extraStem = pseudoRandom(seed + 1) * 32;
 
               flowers.set(key, {
-                x,
-                y: r.top + 3,
+                docX,
+                docY: docTop + 3,
                 baseRowY,
                 seed,
                 growth: 0,
                 targetGrowth: 1,
                 stemLength: minStem + extraStem,
-                angle: (pseudoRandom(seed + 2) - 0.5) * 0.55,
+                angle: (pseudoRandom(seed + 2) - 0.5) * 0.5,
                 petalCount: 5 + Math.floor(pseudoRandom(seed + 3) * 4),
                 color: colors[Math.floor(pseudoRandom(seed + 4) * colors.length)],
-                sourceRect: { left: r.left, top: r.top, width: r.width, height: r.height }
+                docRect: { left: docLeft, top: docTop, width: r.width, height: r.height }
               });
             } else {
               const f = flowers.get(key);
               f.targetGrowth = 1;
-              f.y = r.top + 3;
-              f.sourceRect = { left: r.left, top: r.top, width: r.width, height: r.height };
+              f.docY = docTop + 3;
+              f.docRect = { left: docLeft, top: docTop, width: r.width, height: r.height };
             }
           }
         }
@@ -155,15 +188,22 @@
           f.targetGrowth = 0;
         }
       }
-    });
+    }
+
+    // Слушатели событий выделения на мобильных и десктопах
+    document.addEventListener('selectionchange', updateSelection);
+    window.addEventListener('scroll', updateSelection, { passive: true });
 
     function draw() {
       ctx.clearRect(0, 0, width, height);
 
-      const sortedFlowers = Array.from(flowers.values()).sort((a, b) => a.y - b.y);
+      const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
+      const scrollY = window.pageYOffset || document.documentElement.scrollTop;
+
+      const sortedFlowers = Array.from(flowers.values()).sort((a, b) => a.docY - b.docY);
 
       for (const f of sortedFlowers) {
-        f.growth += (f.targetGrowth - f.growth) * 0.12;
+        f.growth += (f.targetGrowth - f.growth) * 0.14;
 
         if (f.growth < 0.01 && f.targetGrowth === 0) {
           for (const [k, v] of flowers.entries()) {
@@ -174,64 +214,69 @@
 
         const g = f.growth;
         const currentStem = f.stemLength * g;
-        const topX = f.x + Math.sin(f.angle) * currentStem;
-        const topY = f.y - Math.cos(f.angle) * currentStem;
 
-        itemCtx.clearRect(0, 0, width, height);
+        // Перевод абсолютных координат документа в координаты экрана (viewport)
+        const screenX = f.docX - scrollX;
+        const screenY = f.docY - scrollY;
+        const topX = screenX + Math.sin(f.angle) * currentStem;
+        const topY = screenY - Math.cos(f.angle) * currentStem;
 
-        // 1. Стебель
-        itemCtx.strokeStyle = '#15803d';
-        itemCtx.lineWidth = 2.2;
-        itemCtx.lineCap = 'round';
-        itemCtx.beginPath();
-        itemCtx.moveTo(f.x, f.y);
-        itemCtx.quadraticCurveTo(
-          f.x + Math.sin(f.angle * 0.5) * currentStem * 0.5,
-          f.y - (currentStem * 0.5),
+        // Пропуск отрисовки элементов за пределами экрана для экономии батареи и GPU
+        if (screenX < -50 || screenX > width + 50 || screenY < -50 || screenY > height + 50) {
+          continue;
+        }
+
+        // 1. Быстрое маскирование стебля: не рисуем стебель внутри родительской строки
+        ctx.save();
+        if (f.docRect) {
+          const rectScreenLeft = f.docRect.left - scrollX;
+          const rectScreenTop = f.docRect.top - scrollY;
+
+          // Клиппинг: разрешаем рисовать всюду, КРОМЕ выделенной строки
+          ctx.beginPath();
+          ctx.rect(0, 0, width, height);
+          ctx.rect(rectScreenLeft, rectScreenTop, f.docRect.width, f.docRect.height);
+          ctx.clip('evenodd');
+        }
+
+        // Отрисовка стебля
+        ctx.strokeStyle = '#15803d';
+        ctx.lineWidth = 2.2;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(screenX, screenY);
+        ctx.quadraticCurveTo(
+          screenX + Math.sin(f.angle * 0.5) * currentStem * 0.5,
+          screenY - (currentStem * 0.5),
           topX,
           topY
         );
-        itemCtx.stroke();
+        ctx.stroke();
+        ctx.restore();
 
-        // 2. Бутон
+        // 2. Бутон цветка поверх всего
         if (g > 0.28) {
           const petalScale = (g - 0.28) / 0.72;
           const r = 7.5 * petalScale;
 
           // Лепестки
+          ctx.fillStyle = f.color;
           for (let i = 0; i < f.petalCount; i++) {
             const th = (i * 2 * Math.PI) / f.petalCount;
             const px = topX + Math.cos(th) * r;
             const py = topY + Math.sin(th) * r;
 
-            itemCtx.fillStyle = f.color;
-            itemCtx.beginPath();
-            itemCtx.arc(px, py, 4.5 * petalScale, 0, Math.PI * 2);
-            itemCtx.fill();
+            ctx.beginPath();
+            ctx.arc(px, py, 4.5 * petalScale, 0, Math.PI * 2);
+            ctx.fill();
           }
 
           // Сердцевина
-          itemCtx.fillStyle = '#fef08a';
-          itemCtx.beginPath();
-          itemCtx.arc(topX, topY, 3.2 * petalScale, 0, Math.PI * 2);
-          itemCtx.fill();
+          ctx.fillStyle = '#fef08a';
+          ctx.beginPath();
+          ctx.arc(topX, topY, 3.2 * petalScale, 0, Math.PI * 2);
+          ctx.fill();
         }
-
-        // 3. Вырезаем только родительский прямоугольник строки
-        if (f.sourceRect) {
-          itemCtx.save();
-          itemCtx.globalCompositeOperation = 'destination-out';
-          itemCtx.fillStyle = 'black';
-          itemCtx.fillRect(
-            f.sourceRect.left,
-            f.sourceRect.top,
-            f.sourceRect.width,
-            f.sourceRect.height
-          );
-          itemCtx.restore();
-        }
-
-        ctx.drawImage(itemCanvas, 0, 0);
       }
 
       requestAnimationFrame(draw);
